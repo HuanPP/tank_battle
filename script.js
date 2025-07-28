@@ -108,7 +108,11 @@ const gameState = {
     killCount: 0, // 击杀计数
     // 无敌坦克状态
     invincible: false, // 无敌状态
-    invincibleTimer: 0 // 无敌剩余时间
+    invincibleTimer: 0, // 无敌剩余时间
+    // 冰冻状态
+    frozen: false, // 被敌人激光冰冻
+    frozenTimer: 0, // 冰冻剩余时间
+    originalSpeed: 3 // 原始速度（用于冰冻恢复）
   },
   bullets: [],
   enemies: [],
@@ -375,6 +379,12 @@ function draw() {
   if (gameState.player.invincible) {
     drawInvincible(gameState.player.x + gameState.player.width/2, 
                    gameState.player.y + gameState.player.height/2);
+  }
+  
+  // 绘制玩家冰冻状态
+  if (gameState.player.frozen) {
+    drawFrozenEffect(gameState.player.x + gameState.player.width/2, 
+                     gameState.player.y + gameState.player.height/2);
   }
   
   // 绘制玩家血量条
@@ -731,6 +741,18 @@ function updatePlayer() {
     player.invincibleTimer--;
     if (player.invincibleTimer <= 0) {
       player.invincible = false;
+    }
+  }
+  
+  // 更新冰冻状态
+  if (player.frozen && player.frozenTimer > 0) {
+    player.frozenTimer--;
+    if (player.frozenTimer <= 0) {
+      player.frozen = false;
+      player.speed = player.originalSpeed; // 恢复原始速度
+    } else {
+      // 冰冻状态下移动速度为0
+      return; // 直接返回，不处理移动
     }
   }
   
@@ -1105,6 +1127,22 @@ function patrolMovement(enemy) {
 
 // 智能射击
 function smartShoot(enemy, target, currentTime) {
+  // 冲锋坦克特殊逻辑：近距离时使用冲撞攻击
+  if (enemy.tankType === 'SWORD') {
+    const dx = target.x + target.width/2 - (enemy.x + enemy.width/2);
+    const dy = target.y + target.height/2 - (enemy.y + enemy.height/2);
+    const distance = Math.sqrt(dx * dx + dy * dy);
+    
+    // 如果距离很近且有直线路径，执行冲撞
+    if (distance < 120 && hasChargeLineOfSight(enemy, target)) {
+      if (currentTime - enemy.aiState.lastShot < 1500) return; // 冲撞冷却时间更长
+      
+      enemySwordCharge(enemy, target);
+      enemy.aiState.lastShot = currentTime;
+      return;
+    }
+  }
+  
   // 根据AI等级调整射击冷却时间
   const baseCooldown = 800;
   const cooldownReduction = enemy.aiLevel * 150;
@@ -2017,6 +2055,102 @@ function freezeEnemy(enemy, duration = 180) { // 3秒
   createFreezeEffect(enemy.x + enemy.width/2, enemy.y + enemy.height/2);
 }
 
+// 冰冻玩家
+function freezePlayer(duration = 180) { // 3秒
+  const player = gameState.player;
+  player.frozen = true;
+  player.frozenTimer = duration;
+  player.originalSpeed = player.speed;
+  player.speed = 0;
+  
+  // 创建冰冻效果
+  createFreezeEffect(player.x + player.width/2, player.y + player.height/2);
+}
+
+// 敌人冲撞攻击
+function enemySwordCharge(enemy, target) {
+  const dx = target.x + target.width/2 - (enemy.x + enemy.width/2);
+  const dy = target.y + target.height/2 - (enemy.y + enemy.height/2);
+  const distance = Math.sqrt(dx * dx + dy * dy);
+  
+  // 计算冲撞终点
+  const chargeDistance = Math.min(distance + 20, 100);
+  const normalizedDx = dx / distance;
+  const normalizedDy = dy / distance;
+  
+  const targetX = enemy.x + normalizedDx * chargeDistance;
+  const targetY = enemy.y + normalizedDy * chargeDistance;
+  
+  // 更新敌人朝向
+  if (Math.abs(dx) > Math.abs(dy)) {
+    enemy.direction = dx > 0 ? 'right' : 'left';
+  } else {
+    enemy.direction = dy > 0 ? 'down' : 'up';
+  }
+  
+  // 创建冲撞路径效果
+  createChargeTrail(enemy.x + enemy.width/2, enemy.y + enemy.height/2, 
+                   targetX + enemy.width/2, targetY + enemy.height/2);
+  
+  // 检查墙壁碰撞
+  if (!checkWallCollision(targetX, targetY, enemy.width, enemy.height)) {
+    enemy.x = targetX;
+    enemy.y = targetY;
+  }
+  
+  // 对玩家造成冲撞伤害
+  const player = gameState.player;
+  const playerCenterX = player.x + player.width/2;
+  const playerCenterY = player.y + player.height/2;
+  const enemyCenterX = enemy.x + enemy.width/2;
+  const enemyCenterY = enemy.y + enemy.height/2;
+  const distToPlayer = Math.sqrt(
+    Math.pow(playerCenterX - enemyCenterX, 2) + Math.pow(playerCenterY - enemyCenterY, 2)
+  );
+  
+  if (distToPlayer < 50) { // 冲撞范围
+    // 检查玩家防御
+    if (player.invincible) {
+      createInvincibleEffect(player.x + player.width/2, player.y + player.height/2);
+    } else if (player.shield && player.shieldHits > 0) {
+      player.shieldHits--;
+      if (player.shieldHits <= 0) {
+        player.shield = false;
+      }
+      createShieldEffect(player.x + player.width/2, player.y + player.height/2);
+    } else {
+      const chargeDamage = enemy.attack * 1.5; // 冲撞伤害更高
+      player.health -= chargeDamage;
+      createHitEffect(player.x + player.width/2, player.y + player.height/2, '#ff9800');
+      
+      // 击退玩家
+      const knockbackForce = 20;
+      const knockbackX = (playerCenterX - enemyCenterX) / distToPlayer * knockbackForce;
+      const knockbackY = (playerCenterY - enemyCenterY) / distToPlayer * knockbackForce;
+      
+      const newPlayerX = player.x + knockbackX;
+      const newPlayerY = player.y + knockbackY;
+      
+      if (!checkWallCollision(newPlayerX, newPlayerY, player.width, player.height)) {
+        player.x = newPlayerX;
+        player.y = newPlayerY;
+      }
+      
+      if (player.health <= 0) {
+        gameState.player.lives--;
+        player.health = player.maxHealth;
+        player.x = CANVAS_WIDTH / 2;
+        player.y = CANVAS_HEIGHT - TANK_HEIGHT - 20;
+        player.direction = 'up';
+        updateUI();
+      }
+    }
+  }
+  
+  // 创建冲撞效果
+  createChargeEffect(enemy.x + enemy.width/2, enemy.y + enemy.height/2);
+}
+
 // 创建护盾效果
 function createShieldEffect(x, y) {
   gameState.effects.push({
@@ -2181,6 +2315,11 @@ function checkCollisions() {
           createShieldEffect(player.x + player.width/2, player.y + player.height/2);
         } else {
           player.health -= bullet.attack;
+          
+          // 敌人激光特殊效果：冰冻玩家
+          if (bullet.type === 'laser' && !bullet.isPlayer) {
+            freezePlayer(180); // 冰冻3秒
+          }
           
           // 添加击中效果
           createHitEffect(player.x + player.width/2, player.y + player.height/2, '#f44336');
