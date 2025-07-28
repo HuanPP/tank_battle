@@ -286,6 +286,10 @@ body {
   background-color: #9c27b0;
 }
 
+.tank-preview.tracking {
+  background-color: #607d8b;
+}
+
 .tank-preview::after {
   content: '';
   position: absolute;

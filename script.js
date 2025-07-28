@@ -47,6 +47,16 @@ const TANK_TYPES = {
     cooldown: 800,
     weaponType: 'delayBomb',
     description: '延时爆炸炸弹'
+  },
+  TRACKING: {
+    name: '追踪坦克',
+    color: '#607d8b',
+    health: 90,
+    attack: 40,
+    speed: 2.8,
+    cooldown: 600,
+    weaponType: 'trackingBullet',
+    description: '智能追踪弹药'
   }
 };
 
@@ -357,6 +367,47 @@ function draw() {
       ctx.lineTo(bullet.endX, bullet.endY);
       ctx.stroke();
       ctx.restore();
+    } else if (bullet.type === 'trackingBullet') {
+      // 绘制追踪弹
+      const lifePercent = bullet.life / bullet.maxLife;
+      ctx.save();
+      
+      // 主体颜色
+      ctx.fillStyle = bullet.isPlayer ? '#607d8b' : '#795548';
+      ctx.beginPath();
+      ctx.arc(bullet.x, bullet.y, BULLET_SIZE, 0, Math.PI * 2);
+      ctx.fill();
+      
+      // 能量环效果
+      ctx.globalAlpha = 0.6;
+      ctx.strokeStyle = bullet.isPlayer ? '#607d8b' : '#795548';
+      ctx.lineWidth = 2;
+      ctx.beginPath();
+      ctx.arc(bullet.x, bullet.y, BULLET_SIZE + 3, 0, Math.PI * 2);
+      ctx.stroke();
+      
+      // 脉冲效果
+      const pulseTime = Date.now() * 0.01;
+      const pulseRadius = BULLET_SIZE + 5 + Math.sin(pulseTime) * 3;
+      ctx.globalAlpha = 0.3 * lifePercent;
+      ctx.beginPath();
+      ctx.arc(bullet.x, bullet.y, pulseRadius, 0, Math.PI * 2);
+      ctx.stroke();
+      
+      // 绘制目标指示线
+      if (bullet.target && bullet.isPlayer) {
+        ctx.globalAlpha = 0.2;
+        ctx.strokeStyle = '#607d8b';
+        ctx.lineWidth = 1;
+        ctx.setLineDash([5, 5]);
+        ctx.beginPath();
+        ctx.moveTo(bullet.x, bullet.y);
+        ctx.lineTo(bullet.target.x + bullet.target.width/2, bullet.target.y + bullet.target.height/2);
+        ctx.stroke();
+        ctx.setLineDash([]);
+      }
+      
+      ctx.restore();
     } else {
       // 绘制普通子弹
       ctx.fillStyle = bullet.isPlayer ? '#42a5f5' : '#ef5350';
@@ -497,6 +548,18 @@ function drawTankWeapon(tankType) {
       ctx.fillStyle = '#7b1fa2';
       ctx.fillRect(-3, -TANK_HEIGHT/2 - 16, 6, 4);
       break;
+      
+    case 'TRACKING':
+      // 追踪导弹发射器 - 从坦克前方伸出
+      ctx.fillStyle = '#607d8b';
+      ctx.fillRect(-3, -TANK_HEIGHT/2 - 17, 6, 17);
+      // 导弹仓
+      ctx.fillStyle = '#455a64';
+      ctx.fillRect(-2, -TANK_HEIGHT/2 - 17, 4, 5);
+      // 天线/雷达
+      ctx.fillStyle = '#37474f';
+      ctx.fillRect(-1, -TANK_HEIGHT/2 - 19, 2, 2);
+      break;
   }
 }
 
@@ -519,6 +582,9 @@ function calculateWeaponPosition(tankX, tankY, direction, tankType = 'NORMAL') {
       break;
     case 'BOMB':
       weaponLength = 16;
+      break;
+    case 'TRACKING':
+      weaponLength = 17;
       break;
     default:
       weaponLength = 15;
@@ -1128,32 +1194,130 @@ function updateBullets() {
       continue;
     }
     
-    // 更新普通子弹位置
-    switch (bullet.direction) {
-      case 'up':
-        bullet.y -= BULLET_SPEED;
-        break;
-      case 'right':
-        bullet.x += BULLET_SPEED;
-        break;
-      case 'down':
-        bullet.y += BULLET_SPEED;
-        break;
-      case 'left':
-        bullet.x -= BULLET_SPEED;
-        break;
+    if (bullet.type === 'trackingBullet') {
+      // 更新追踪弹
+      updateTrackingBullet(bullet);
+      
+      // 检查生命周期
+      bullet.life--;
+      if (bullet.life <= 0) {
+        gameState.bullets.splice(i, 1);
+        continue;
+      }
+      
+      // 检查是否撞墙或超出边界
+      if (bullet.x < 0 || bullet.x > CANVAS_WIDTH || bullet.y < 0 || bullet.y > CANVAS_HEIGHT ||
+          checkBulletWallCollision(bullet)) {
+        gameState.bullets.splice(i, 1);
+        continue;
+      }
+    } else {
+      // 更新普通子弹位置
+      switch (bullet.direction) {
+        case 'up':
+          bullet.y -= BULLET_SPEED;
+          break;
+        case 'right':
+          bullet.x += BULLET_SPEED;
+          break;
+        case 'down':
+          bullet.y += BULLET_SPEED;
+          break;
+        case 'left':
+          bullet.x -= BULLET_SPEED;
+          break;
+      }
+      
+      // 移除超出画布的子弹
+      if (bullet.x < 0 || bullet.x > CANVAS_WIDTH || bullet.y < 0 || bullet.y > CANVAS_HEIGHT) {
+        gameState.bullets.splice(i, 1);
+        continue;
+      }
+      
+      // 检查子弹是否撞墙
+      if (checkBulletWallCollision(bullet)) {
+        // 子弹撞墙后消失，但不摧毁墙
+        gameState.bullets.splice(i, 1);
+      }
     }
-    
-    // 移除超出画布的子弹
-    if (bullet.x < 0 || bullet.x > CANVAS_WIDTH || bullet.y < 0 || bullet.y > CANVAS_HEIGHT) {
-      gameState.bullets.splice(i, 1);
-      continue;
+  }
+}
+
+// 更新追踪弹
+function updateTrackingBullet(bullet) {
+  // 检查目标是否还存在
+  if (bullet.isPlayer) {
+    // 玩家的追踪弹检查敌人是否还存在
+    if (!gameState.enemies.includes(bullet.target)) {
+      // 目标已死，寻找新目标
+      if (gameState.enemies.length > 0) {
+        let minDistance = Infinity;
+        let newTarget = null;
+        gameState.enemies.forEach(enemy => {
+          const distance = Math.sqrt((enemy.x - bullet.x) ** 2 + (enemy.y - bullet.y) ** 2);
+          if (distance < minDistance) {
+            minDistance = distance;
+            newTarget = enemy;
+          }
+        });
+        bullet.target = newTarget;
+      } else {
+        bullet.target = null;
+      }
     }
+  }
+  
+  if (!bullet.target) {
+    // 没有目标，直线飞行
+    bullet.x += bullet.vx;
+    bullet.y += bullet.vy;
+    return;
+  }
+  
+  // 每30帧重新计算路径（约0.5秒）
+  bullet.recalculateTimer++;
+  if (bullet.recalculateTimer >= 30 || bullet.pathNodes.length === 0) {
+    bullet.recalculateTimer = 0;
+    const targetCenter = {
+      x: bullet.target.x + bullet.target.width / 2,
+      y: bullet.target.y + bullet.target.height / 2
+    };
+    bullet.pathNodes = findPath({x: bullet.x, y: bullet.y}, targetCenter);
+    bullet.currentNodeIndex = 0;
+  }
+  
+  // 沿着路径移动
+  if (bullet.pathNodes.length > 0 && bullet.currentNodeIndex < bullet.pathNodes.length) {
+    const targetNode = bullet.pathNodes[bullet.currentNodeIndex];
+    const dx = targetNode.x - bullet.x;
+    const dy = targetNode.y - bullet.y;
+    const distance = Math.sqrt(dx * dx + dy * dy);
     
-    // 检查子弹是否撞墙
-    if (checkBulletWallCollision(bullet)) {
-      // 子弹撞墙后消失，但不摧毁墙
-      gameState.bullets.splice(i, 1);
+    if (distance < 10) {
+      // 到达当前节点，移动到下一个
+      bullet.currentNodeIndex++;
+    } else {
+      // 向当前目标节点移动
+      bullet.vx = (dx / distance) * bullet.speed;
+      bullet.vy = (dy / distance) * bullet.speed;
+      bullet.x += bullet.vx;
+      bullet.y += bullet.vy;
+    }
+  } else {
+    // 直接向目标移动（作为备用）
+    const targetCenter = {
+      x: bullet.target.x + bullet.target.width / 2,
+      y: bullet.target.y + bullet.target.height / 2
+    };
+    const dx = targetCenter.x - bullet.x;
+    const dy = targetCenter.y - bullet.y;
+    const distance = Math.sqrt(dx * dx + dy * dy);
+    
+    if (distance > 0) {
+      bullet.vx = (dx / distance) * bullet.speed;
+      bullet.vy = (dy / distance) * bullet.speed;
+      bullet.x += bullet.vx;
+      bullet.y += bullet.vy;
     }
   }
 }
@@ -1297,6 +1461,8 @@ function shoot(x, y, direction, isPlayer, attack, weaponType = 'bullet') {
     createLaser(x, y, direction, isPlayer, attack);
   } else if (weaponType === 'delayBomb') {
     createDelayBomb(x, y, isPlayer, attack);
+  } else if (weaponType === 'trackingBullet') {
+    createTrackingBullet(x, y, isPlayer, attack);
   } else {
     gameState.bullets.push({
       x: x,
@@ -1369,6 +1535,130 @@ function createDelayBomb(x, y, isPlayer, attack) {
     pullRadius: 150, // 黑洞吸引范围
     pullStrength: 2 // 吸引力强度
   });
+}
+
+// 创建追踪弹
+function createTrackingBullet(x, y, isPlayer, attack) {
+  // 寻找最近的目标
+  let target = null;
+  if (isPlayer && gameState.enemies.length > 0) {
+    // 玩家的追踪弹锁定最近的敌人
+    let minDistance = Infinity;
+    gameState.enemies.forEach(enemy => {
+      const distance = Math.sqrt((enemy.x - x) ** 2 + (enemy.y - y) ** 2);
+      if (distance < minDistance) {
+        minDistance = distance;
+        target = enemy;
+      }
+    });
+  } else if (!isPlayer) {
+    // 敌人的追踪弹锁定玩家
+    target = gameState.player;
+  }
+
+  if (target) {
+    gameState.bullets.push({
+      x: x,
+      y: y,
+      vx: 0,
+      vy: 0,
+      speed: 4,
+      isPlayer: isPlayer,
+      attack: attack,
+      type: 'trackingBullet',
+      target: target,
+      life: 300, // 5秒生命周期
+      maxLife: 300,
+      pathNodes: [], // A*路径节点
+      currentNodeIndex: 0,
+      recalculateTimer: 0 // 重新计算路径的计时器
+    });
+  }
+}
+
+// A*寻路算法（简化版）
+function findPath(start, end, avoidWalls = true) {
+  const gridSize = 20; // 网格大小
+  const startNode = {
+    x: Math.floor(start.x / gridSize),
+    y: Math.floor(start.y / gridSize)
+  };
+  const endNode = {
+    x: Math.floor(end.x / gridSize),
+    y: Math.floor(end.y / gridSize)
+  };
+  
+  // 简化的寻路：如果直线路径清晰，直接返回目标点
+  if (!avoidWalls || hasDirectPath(start, end)) {
+    return [end];
+  }
+  
+  // 否则返回绕路点
+  const waypoints = findWaypoints(start, end);
+  return waypoints;
+}
+
+// 检查两点间是否有直线路径
+function hasDirectPath(start, end) {
+  const dx = end.x - start.x;
+  const dy = end.y - start.y;
+  const distance = Math.sqrt(dx * dx + dy * dy);
+  const steps = Math.floor(distance / 5);
+  
+  for (let i = 1; i < steps; i++) {
+    const checkX = start.x + (dx / steps) * i;
+    const checkY = start.y + (dy / steps) * i;
+    
+    if (checkBulletWallCollision({x: checkX, y: checkY})) {
+      return false;
+    }
+  }
+  return true;
+}
+
+// 寻找绕路点
+function findWaypoints(start, end) {
+  const waypoints = [];
+  
+  // 简单的绕墙策略：尝试几个可能的路径点
+  const candidates = [
+    {x: start.x + 60, y: start.y},
+    {x: start.x - 60, y: start.y},
+    {x: start.x, y: start.y + 60},
+    {x: start.x, y: start.y - 60},
+    {x: start.x + 40, y: start.y + 40},
+    {x: start.x - 40, y: start.y + 40},
+    {x: start.x + 40, y: start.y - 40},
+    {x: start.x - 40, y: start.y - 40}
+  ];
+  
+  // 选择最佳绕路点
+  let bestWaypoint = null;
+  let bestScore = Infinity;
+  
+  candidates.forEach(candidate => {
+    // 检查候选点是否可行
+    if (!checkBulletWallCollision({x: candidate.x, y: candidate.y}) &&
+        candidate.x > 20 && candidate.x < CANVAS_WIDTH - 20 &&
+        candidate.y > 20 && candidate.y < CANVAS_HEIGHT - 20) {
+      
+      const distanceToCandidate = Math.sqrt((candidate.x - start.x) ** 2 + (candidate.y - start.y) ** 2);
+      const distanceToEnd = Math.sqrt((end.x - candidate.x) ** 2 + (end.y - candidate.y) ** 2);
+      const totalDistance = distanceToCandidate + distanceToEnd;
+      
+      if (totalDistance < bestScore) {
+        bestScore = totalDistance;
+        bestWaypoint = candidate;
+      }
+    }
+  });
+  
+  if (bestWaypoint) {
+    waypoints.push(bestWaypoint);
+  }
+  waypoints.push(end);
+  
+  return waypoints;
 }
 
 // 智能冲撞攻击
