@@ -1,0 +1,189 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>坦克大战</title>
+    <link rel="stylesheet"
+        href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:opsz,wght,FILL,GRAD@20..48,100..700,0..1,-50..200" />
+    <link rel="stylesheet" href="styles.css">
+</head>
+
+<body>
+    <div class="game-container">
+        <div class="game-sidebar">
+            <h2>游戏设置</h2>
+
+            <div class="settings-group">
+                <h3>坦克选择</h3>
+                <div class="tank-selector">
+                    <div class="tank-option" data-type="NORMAL">
+                        <div class="tank-preview normal"></div>
+                        <div class="tank-info">
+                            <h4>标准坦克</h4>
+                            <p>平衡的攻击和防御</p>
+                        </div>
+                    </div>
+                    <div class="tank-option" data-type="LASER">
+                        <div class="tank-preview laser"></div>
+                        <div class="tank-info">
+                            <h4>激光坦克</h4>
+                            <p>发射穿透激光</p>
+                        </div>
+                    </div>
+                    <div class="tank-option" data-type="SWORD">
+                        <div class="tank-preview sword"></div>
+                        <div class="tank-info">
+                            <h4>冲锋坦克</h4>
+                            <p>近战冲撞攻击</p>
+                        </div>
+                    </div>
+                    <div class="tank-option" data-type="BOMB">
+                        <div class="tank-preview bomb"></div>
+                        <div class="tank-info">
+                            <h4>爆破坦克</h4>
+                            <p>延时爆炸炸弹</p>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="settings-group">
+                <h3>玩家坦克</h3>
+                <div class="setting-item">
+                    <label>血量: <span id="playerHealthValue">100</span></label>
+                    <input type="range" id="playerHealth" min="10" max="1000" value="100" class="slider">
+                </div>
+                <div class="setting-item">
+                    <label>攻击力: <span id="playerAttackValue">50</span></label>
+                    <input type="range" id="playerAttack" min="1" max="500" value="50" class="slider">
+                </div>
+                <div class="setting-item">
+                    <label>速度: <span id="playerSpeedValue">3</span></label>
+                    <input type="range" id="playerSpeed" min="0.5" max="20" value="3" step="0.5" class="slider">
+                </div>
+            </div>
+
+            <div class="settings-group">
+                <h3>敌方坦克</h3>
+                <div class="setting-item">
+                    <label>血量: <span id="enemyHealthValue">100</span></label>
+                    <input type="range" id="enemyHealth" min="1" max="1000" value="100" class="slider">
+                </div>
+                <div class="setting-item">
+                    <label>攻击力: <span id="enemyAttackValue">50</span></label>
+                    <input type="range" id="enemyAttack" min="1" max="500" value="50" class="slider">
+                </div>
+                <div class="setting-item">
+                    <label>速度: <span id="enemySpeedValue">2</span></label>
+                    <input type="range" id="enemySpeed" min="0.1" max="15" value="2" step="0.1" class="slider">
+                </div>
+            </div>
+
+            <div class="settings-group">
+                <h3>快速预设</h3>
+                <div class="preset-buttons">
+                    <button id="presetNormal" class="preset-button">
+                        <span class="material-symbols-outlined">balance</span>
+                        平衡
+                    </button>
+                    <button id="presetGodMode" class="preset-button">
+                        <span class="material-symbols-outlined">shield</span>
+                        无敌
+                    </button>
+                    <button id="presetHardcore" class="preset-button">
+                        <span class="material-symbols-outlined">warning</span>
+                        地狱
+                    </button>
+                    <button id="presetSpeed" class="preset-button">
+                        <span class="material-symbols-outlined">speed</span>
+                        极速
+                    </button>
+                </div>
+            </div>
+            
+            <div class="settings-group">
+                <h3>游戏控制</h3>
+                <button id="applySettings" class="control-button full-width">
+                    <span class="material-symbols-outlined">settings</span>
+                    应用设置
+                </button>
+            </div>
+        </div>
+
+        <div class="game-main">
+            <header class="game-header">
+                <h1 class="game-title">坦克大战</h1>
+                <div class="game-stats">
+                    <div class="stat-item">
+                        <span class="material-symbols-outlined">target</span>
+                        <span id="score">0</span>
+                    </div>
+                    <div class="stat-item">
+                        <span class="material-symbols-outlined">favorite</span>
+                        <span id="lives">3</span>
+                    </div>
+                    <div class="stat-item">
+                        <span class="material-symbols-outlined">timer</span>
+                        <span id="level">1</span>
+                    </div>
+                </div>
+            </header>
+
+            <div class="game-area">
+                <canvas id="gameCanvas" width="800" height="600"></canvas>
+            </div>
+
+            <div class="game-controls">
+                <button id="startBtn" class="control-button">
+                    <span class="material-symbols-outlined">play_arrow</span>
+                    开始游戏
+                </button>
+                <button id="pauseBtn" class="control-button">
+                    <span class="material-symbols-outlined">pause</span>
+                    暂停
+                </button>
+                <button id="resetBtn" class="control-button">
+                    <span class="material-symbols-outlined">replay</span>
+                    重置
+                </button>
+            </div>
+
+            <div class="instructions">
+                <h3>游戏说明</h3>
+                <p><strong>移动:</strong> WASD键 | <strong>攻击:</strong> E键 | <strong>暂停:</strong> 空格键</p>
+                <div class="tank-instructions">
+                    <div><strong>标准坦克:</strong> 击杀敌人获得护盾+治疗</div>
+                    <div><strong>激光坦克:</strong> 激光冰冻敌人3秒</div>
+                    <div><strong>冲锋坦克:</strong> 范围冲撞+击退效果</div>
+                    <div><strong>爆破坦克:</strong> 黑洞炸弹吸引+爆炸</div>
+                </div>
+                <div class="ai-info">
+                    <h4>敌人AI系统</h4>
+                    <div><strong>⚡激进型:</strong> 直接冲向玩家</div>
+                    <div><strong>🛡防御型:</strong> 保持距离，侧向移动</div>
+                    <div><strong>🎯猎手型:</strong> 尝试包抄玩家</div>
+                    <div><strong>🔍狙击型:</strong> 寻找最佳射击位置</div>
+                </div>
+                <div class="debug-info">
+                    <h4>设置说明</h4>
+                    <div><strong>血量:</strong> 10-1000 (极限生存或秒杀模式)</div>
+                    <div><strong>攻击力:</strong> 1-500 (一击必杀或持久战)</div>
+                    <div><strong>速度:</strong> 0.5-20 (蜗牛爬行或闪电移动)</div>
+                    <div><strong>预设:</strong> 快速体验不同游戏风格</div>
+                </div>
+                <div class="debug-info">
+                    <h4>调试功能</h4>
+                    <div><strong>F1键:</strong> 切换键盘状态显示</div>
+                    <div><strong>F2键:</strong> 切换武器发射点显示</div>
+                    <div>如果WASD失效，请点击游戏区域重新获得焦点</div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script src="script.js"></script>
+</body>
+
+</html>
