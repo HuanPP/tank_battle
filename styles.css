@@ -290,6 +290,10 @@ body {
   background-color: #607d8b;
 }
 
+.tank-preview.invincible {
+  background-color: #ffc107;
+}
+
 .tank-preview::after {
   content: '';
   position: absolute;

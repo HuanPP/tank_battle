@@ -57,6 +57,16 @@ const TANK_TYPES = {
     cooldown: 600,
     weaponType: 'trackingBullet',
     description: '智能追踪弹药'
+  },
+  INVINCIBLE: {
+    name: '无敌坦克',
+    color: '#ffc107',
+    health: 80,
+    attack: 45,
+    speed: 3.2,
+    cooldown: 400,
+    weaponType: 'bullet',
+    description: '击杀获得无敌时间'
   }
 };
 
@@ -95,7 +105,10 @@ const gameState = {
     shield: false, // 标准坦克护盾
     shieldHits: 0, // 护盾剩余次数
     frozenEnemies: [], // 激光坦克冰冻的敌人
-    killCount: 0 // 击杀计数
+    killCount: 0, // 击杀计数
+    // 无敌坦克状态
+    invincible: false, // 无敌状态
+    invincibleTimer: 0 // 无敌剩余时间
   },
   bullets: [],
   enemies: [],
@@ -252,6 +265,17 @@ function createEnemies() {
     // 根据等级和位置确定敌人AI等级
     const aiLevel = Math.min(3, Math.floor(gameState.level / 2) + (index % 2));
     
+    // 随机分配敌人坦克类型，比例：普通50%，冲锋25%，激光25%
+    let enemyType = 'NORMAL';
+    const rand = Math.random();
+    if (rand < 0.25) {
+      enemyType = 'SWORD';
+    } else if (rand < 0.5) {
+      enemyType = 'LASER';
+    }
+    
+    const enemyTankData = TANK_TYPES[enemyType];
+    
     gameState.enemies.push({
       x: pos.x,
       y: pos.y,
@@ -262,8 +286,12 @@ function createEnemies() {
       attack: gameSettings.enemy.attack,
       speed: gameSettings.enemy.speed,
       direction: 'down',
+      tankType: enemyType, // 敌人坦克类型
       aiLevel: aiLevel, // 0: 基础, 1: 中等, 2: 高级, 3: 专家
       aiPersonality: ['aggressive', 'defensive', 'hunter', 'sniper'][index % 4], // AI性格
+      lastShot: 0, // 敌人射击冷却
+      swordCharge: 0, // 冲锋坦克蓄力
+      swordCharging: false,
       // 状态效果
       frozen: false,
       frozenTimer: 0,
@@ -304,9 +332,15 @@ function draw() {
   
   // 绘制敌人坦克
   gameState.enemies.forEach(enemy => {
-    // 冰冻状态下的颜色变化
-    const enemyColor = enemy.frozen ? '#81d4fa' : '#f44336';
-    drawTank(enemy.x, enemy.y, enemy.direction, enemyColor, 'NORMAL', false);
+    // 根据坦克类型和冰冻状态确定颜色
+    let enemyColor;
+    if (enemy.frozen) {
+      enemyColor = '#81d4fa';
+    } else {
+      const tankData = TANK_TYPES[enemy.tankType];
+      enemyColor = tankData ? tankData.color : '#f44336';
+    }
+    drawTank(enemy.x, enemy.y, enemy.direction, enemyColor, enemy.tankType, false);
     
     // 绘制冰冻效果
     if (enemy.frozen) {
@@ -335,6 +369,12 @@ function draw() {
   if (gameState.player.shield) {
     drawShield(gameState.player.x + gameState.player.width/2, 
                gameState.player.y + gameState.player.height/2);
+  }
+  
+  // 绘制玩家无敌状态
+  if (gameState.player.invincible) {
+    drawInvincible(gameState.player.x + gameState.player.width/2, 
+                   gameState.player.y + gameState.player.height/2);
   }
   
   // 绘制玩家血量条
@@ -560,6 +600,15 @@ function drawTankWeapon(tankType) {
       ctx.fillStyle = '#37474f';
       ctx.fillRect(-1, -TANK_HEIGHT/2 - 19, 2, 2);
       break;
+      
+    case 'INVINCIBLE':
+      // 无敌坦克炮管 - 带金色装饰
+      ctx.fillStyle = '#ffc107';
+      ctx.fillRect(-3, -TANK_HEIGHT/2 - 15, 6, 15);
+      // 金色炮口
+      ctx.fillStyle = '#ff8f00';
+      ctx.fillRect(-2, -TANK_HEIGHT/2 - 15, 4, 3);
+      break;
   }
 }
 
@@ -676,6 +725,14 @@ function updatePlayer() {
   let newX = player.x;
   let newY = player.y;
   let moved = false;
+  
+  // 更新无敌状态
+  if (player.invincible && player.invincibleTimer > 0) {
+    player.invincibleTimer--;
+    if (player.invincibleTimer <= 0) {
+      player.invincible = false;
+    }
+  }
   
   // 根据按键状态移动玩家
   if (keys.w) {
@@ -1066,11 +1123,15 @@ function smartShoot(enemy, target, currentTime) {
       enemy.direction = shootDirection; // 转向目标
       
       // 计算子弹发射位置（使用统一的武器位置计算）
-      const weaponPosition = calculateWeaponPosition(enemy.x, enemy.y, shootDirection, 'NORMAL');
+      const weaponPosition = calculateWeaponPosition(enemy.x, enemy.y, shootDirection, enemy.tankType);
       const bulletX = weaponPosition.x;
       const bulletY = weaponPosition.y;
       
-      shoot(bulletX, bulletY, shootDirection, false, enemy.attack);
+      // 根据敌人坦克类型发射不同武器
+      const enemyTankData = TANK_TYPES[enemy.tankType];
+      const weaponType = enemyTankData ? enemyTankData.weaponType : 'bullet';
+      
+      shoot(bulletX, bulletY, shootDirection, false, enemy.attack, weaponType);
       enemy.aiState.lastShot = currentTime;
     }
   }
@@ -1385,6 +1446,8 @@ function updateDelayBombs() {
             // 标准坦克击杀奖励
             if (gameState.player.tankType === 'NORMAL') {
               handleNormalTankKill();
+            } else if (gameState.player.tankType === 'INVINCIBLE') {
+              handleInvincibleTankKill();
             }
             createExplosionEffect(enemy.x + enemy.width/2, enemy.y + enemy.height/2);
             updateUI();
@@ -1925,6 +1988,19 @@ function handleNormalTankKill() {
   createShieldEffect(player.x + player.width/2, player.y + player.height/2);
 }
 
+// 无敌坦克击杀奖励
+function handleInvincibleTankKill() {
+  const player = gameState.player;
+  player.killCount++;
+  
+  // 获得5秒无敌时间
+  player.invincible = true;
+  player.invincibleTimer = 300; // 5秒 (60fps)
+  
+  // 创建无敌效果
+  createInvincibleEffect(player.x + player.width/2, player.y + player.height/2);
+}
+
 // 激光冰冻效果
 function freezeEnemy(enemy, duration = 180) { // 3秒
   enemy.frozen = true;
@@ -1952,6 +2028,23 @@ function createShieldEffect(x, y) {
     maxLife: 30,
     type: 'shield'
   });
+}
+
+// 创建无敌效果
+function createInvincibleEffect(x, y) {
+  for (let i = 0; i < 8; i++) {
+    gameState.effects.push({
+      x: x,
+      y: y,
+      vx: Math.cos(i * Math.PI / 4) * 3,
+      vy: Math.sin(i * Math.PI / 4) * 3,
+      color: '#ffc107',
+      size: 6,
+      life: 60,
+      maxLife: 60,
+      type: 'invincible'
+    });
+  }
 }
 
 // 创建治疗效果
@@ -2049,6 +2142,8 @@ function checkCollisions() {
             // 标准坦克击杀奖励
             if (gameState.player.tankType === 'NORMAL') {
               handleNormalTankKill();
+            } else if (gameState.player.tankType === 'INVINCIBLE') {
+              handleInvincibleTankKill();
             }
             createExplosionEffect(enemy.x + enemy.width/2, enemy.y + enemy.height/2);
             updateUI();
@@ -2073,8 +2168,12 @@ function checkCollisions() {
         // 击中玩家
         gameState.bullets.splice(i, 1);
         
-        // 检查护盾
-        if (player.shield && player.shieldHits > 0) {
+        // 检查无敌状态
+        if (player.invincible) {
+          // 无敌状态下不受伤害，只显示特效
+          createInvincibleEffect(player.x + player.width/2, player.y + player.height/2);
+        } else if (player.shield && player.shieldHits > 0) {
+          // 检查护盾
           player.shieldHits--;
           if (player.shieldHits <= 0) {
             player.shield = false;
@@ -2168,12 +2267,17 @@ function nextLevel() {
   // 创建更多敌人
   createEnemies();
   
-  // 增加难度：敌人属性随等级提升
+  // 温和的难度提升：基于用户设置的基础值进行小幅增长
   gameState.enemies.forEach(enemy => {
-    enemy.health += gameState.level * 10;
+    // 每关只增加基础设置值的10%，而不是固定值
+    const healthIncrease = gameSettings.enemy.health * 0.1 * (gameState.level - 1);
+    const attackIncrease = gameSettings.enemy.attack * 0.08 * (gameState.level - 1);
+    const speedIncrease = gameSettings.enemy.speed * 0.05 * (gameState.level - 1);
+    
+    enemy.health = gameSettings.enemy.health + healthIncrease;
     enemy.maxHealth = enemy.health;
-    enemy.attack += gameState.level * 5;
-    enemy.speed = Math.min(enemy.speed + gameState.level * 0.2, 4);
+    enemy.attack = gameSettings.enemy.attack + attackIncrease;
+    enemy.speed = Math.min(gameSettings.enemy.speed + speedIncrease, gameSettings.enemy.speed * 2); // 速度不超过基础值的2倍
   });
   
   updateUI();
@@ -2506,6 +2610,39 @@ function drawShield(x, y) {
   ctx.restore();
 }
 
+// 绘制无敌状态
+function drawInvincible(x, y) {
+  ctx.save();
+  const time = Date.now() * 0.02;
+  
+  // 金色光环效果
+  for (let i = 0; i < 3; i++) {
+    const radius = 20 + i * 8 + Math.sin(time + i) * 5;
+    ctx.globalAlpha = 0.4 - i * 0.1;
+    ctx.strokeStyle = '#ffc107';
+    ctx.lineWidth = 3;
+    ctx.beginPath();
+    ctx.arc(x, y, radius, 0, Math.PI * 2);
+    ctx.stroke();
+  }
+  
+  // 闪烁星星效果
+  for (let i = 0; i < 8; i++) {
+    const angle = (i / 8) * Math.PI * 2 + time;
+    const starRadius = 30 + Math.sin(time * 2 + i) * 5;
+    const starX = x + Math.cos(angle) * starRadius;
+    const starY = y + Math.sin(angle) * starRadius;
+    
+    ctx.globalAlpha = 0.8;
+    ctx.fillStyle = '#ffc107';
+    ctx.beginPath();
+    ctx.arc(starX, starY, 2, 0, Math.PI * 2);
+    ctx.fill();
+  }
+  
+  ctx.restore();
+}
+
 // 绘制冰冻效果
 function drawFrozenEffect(x, y) {
   ctx.save();
@@ -2699,6 +2836,22 @@ function drawEffects() {
       ctx.fillStyle = effect.color;
       ctx.beginPath();
       ctx.arc(effect.x, effect.y, effect.size * alpha, 0, Math.PI * 2);
+      ctx.fill();
+    } else if (effect.type === 'invincible') {
+      effect.x += effect.vx;
+      effect.y += effect.vy;
+      effect.vx *= 0.95;
+      effect.vy *= 0.95;
+      
+      ctx.fillStyle = effect.color;
+      ctx.beginPath();
+      ctx.arc(effect.x, effect.y, effect.size * alpha, 0, Math.PI * 2);
+      ctx.fill();
+      
+      // 添加金色光晕
+      ctx.globalAlpha = alpha * 0.3;
+      ctx.beginPath();
+      ctx.arc(effect.x, effect.y, effect.size * alpha * 2, 0, Math.PI * 2);
       ctx.fill();
     } else if (effect.type === 'chargeArea') {
       ctx.strokeStyle = effect.color;
